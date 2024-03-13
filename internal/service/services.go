@@ -9,8 +9,9 @@ type services struct {
 }
 
 func NewServices() Services {
+	uploadService := newUploadService()
 	configService := newConfigService()
-	shareService := newShareService(configService)
+	shareService := newShareService(configService, uploadService)
 	return &services{
 		shareService: shareService,
 	}
