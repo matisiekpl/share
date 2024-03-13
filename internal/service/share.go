@@ -1,4 +1,4 @@
-package main
+package service
 
 import (
 	"bytes"
@@ -8,13 +8,10 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/manifoldco/promptui"
 	"github.com/schollz/progressbar/v3"
 	"github.com/sirupsen/logrus"
-	"gopkg.in/yaml.v3"
 	"net/http"
 	"os"
-	"strings"
 )
 
 const (
@@ -22,97 +19,22 @@ const (
 	maxRetries  = 3
 )
 
-type config struct {
-	BucketName string `yaml:"bucket"`
+type ShareService interface {
+	Share(filename string) error
 }
 
-func setup() error {
-	homedir, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("cannot get user home directory: %w", err)
-	}
-	configFilename := fmt.Sprintf("%s/.share.yaml", homedir)
-	_, err = os.Stat(configFilename)
-	if err != nil {
-		logrus.Info("share is not configured yet, do you want to configure it now?")
-		// config file does not exist, create it
-		configureNowPrompt := promptui.Prompt{
-			Label: "Configure share now? [y/n]",
-			Validate: func(s string) error {
-				if strings.ToLower(s) != "y" && strings.ToLower(s) != "n" {
-					return fmt.Errorf("invalid input")
-				}
-				return nil
-			},
-		}
-		configureNow, err := configureNowPrompt.Run()
-		if err != nil {
-			return fmt.Errorf("prompt failed %w", err)
-		}
-		if configureNow == "y" {
-			logrus.Info("share will use AWS credentials from ~/.aws/credentials")
-			configureNowPrompt := promptui.Prompt{
-				Label: "Enter the name of the AWS S3 bucket name to store files",
-				Validate: func(s string) error {
-					if s == "" {
-						return fmt.Errorf("invalid bucket name")
-					}
-					return nil
-				},
-			}
-			bucketName, err := configureNowPrompt.Run()
-			if err != nil {
-				return fmt.Errorf("prompt failed %w", err)
-			}
-			logrus.Infof("Saving bucket name: %s to ~/.share.yaml", bucketName)
-
-			// create config file
-			f, err := os.Create(configFilename)
-			if err != nil {
-				return fmt.Errorf("cannot create config file: %w", err)
-			}
-			defer f.Close()
-
-			marshaledYaml, err := yaml.Marshal(config{
-				BucketName: bucketName,
-			})
-			if err != nil {
-				return fmt.Errorf("cannot marshal config: %w", err)
-			}
-			_, err = f.WriteString(string(marshaledYaml))
-			if err != nil {
-				return fmt.Errorf("cannot write config file: %w", err)
-			}
-			logrus.Info("share is now configured")
-		} else {
-			os.Exit(0)
-		}
-	}
-	return nil
+type shareService struct {
+	configService ConfigService
 }
 
-func getConfig() config {
-	homedir, err := os.UserHomeDir()
-	if err != nil {
-		logrus.Fatal(err)
+func newShareService(configService ConfigService) ShareService {
+	return &shareService{
+		configService: configService,
 	}
-	configFilename := fmt.Sprintf("%s/.share.yaml", homedir)
-	f, err := os.Open(configFilename)
-	if err != nil {
-		logrus.Fatal(err)
-	}
-	defer f.Close()
-
-	var cfg config
-	err = yaml.NewDecoder(f).Decode(&cfg)
-	if err != nil {
-		logrus.Fatal(err)
-	}
-	return cfg
 }
 
-func share(filename string) error {
-	if err := setup(); err != nil {
+func (s shareService) Share(filename string) error {
+	if err := s.configService.Setup(); err != nil {
 		return err
 	}
 
@@ -124,7 +46,7 @@ func share(filename string) error {
 		return fmt.Errorf("file does not exist")
 	}
 
-	cfg := getConfig()
+	cfg := s.configService.Get()
 
 	sess := session.Must(session.NewSessionWithOptions(session.Options{
 		SharedConfigState: session.SharedConfigEnable,
