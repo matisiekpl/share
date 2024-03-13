@@ -3,12 +3,13 @@ package service
 import (
 	"fmt"
 	"github.com/sirupsen/logrus"
+	"golang.design/x/clipboard"
 	"os"
 	"strings"
 )
 
 type ShareService interface {
-	Share(filename string) error
+	Share(filename string, copyToClipboard bool) error
 }
 
 type shareService struct {
@@ -23,7 +24,7 @@ func newShareService(configService ConfigService, uploadService UploadService) S
 	}
 }
 
-func (s shareService) Share(filename string) error {
+func (s shareService) Share(filename string, copyToClipboard bool) error {
 	if err := s.configService.Setup(); err != nil {
 		return err
 	}
@@ -41,13 +42,25 @@ func (s shareService) Share(filename string) error {
 	if err != nil {
 		return err
 	}
+	logrus.Infof("file uploaded successfully")
 	err = s.uploadService.GrantPublicAccess(key, cfg)
 	if err != nil {
 		return err
 	}
 
 	publicUrl := fmt.Sprintf("https://%s.s3.amazonaws.com/%s", strings.ToLower(cfg.BucketName), key)
+	logrus.Infof("file shared: %s", publicUrl)
 
-	logrus.Infof("File uploaded successfully. File location: %s", publicUrl)
-	return err
+	if copyToClipboard {
+		err = clipboard.Init()
+		if err != nil {
+			logrus.Panicf("unable to init clipboard: %w", err)
+		}
+		clipboard.Write(clipboard.FmtText, []byte(publicUrl))
+		logrus.Infof("copied to clipboard")
+	} else {
+		logrus.Infof("tip: add \"-c\" before filename to copy public url to clipboard")
+	}
+
+	return nil
 }

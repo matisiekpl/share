@@ -13,8 +13,15 @@ func main() {
 	app := &cli.App{
 		Name:  "share",
 		Usage: "easily share files with s3",
+		Flags: []cli.Flag{
+			&cli.BoolFlag{
+				Name:    "copy",
+				Aliases: []string{"c"},
+				Usage:   "copy to clipboard",
+			},
+		},
 		Action: func(c *cli.Context) error {
-			return services.Share().Share(c.Args().First())
+			return services.Share().Share(c.Args().First(), c.Bool("copy"))
 		},
 	}
 

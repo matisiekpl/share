@@ -17,8 +17,9 @@ import (
 )
 
 const (
-	maxPartSize = int64(1024 * 1024)
-	maxRetries  = 3
+	maxPartSize              = int64(1024 * 1024)
+	maxRetries               = 3
+	showProgressBarThreshold = int64(5 * 1024 * 1024)
 )
 
 type UploadService interface {
@@ -69,9 +70,16 @@ func (u uploadService) Upload(filename string, cfg dto.Config) (string, error) {
 	var completedParts []*s3.CompletedPart
 	partNumber := 1
 
-	bar := progressbar.DefaultBytes(size, "sharing")
+	showProgressBar := size > showProgressBarThreshold
+
+	var bar *progressbar.ProgressBar
+	if showProgressBar {
+		bar = progressbar.DefaultBytes(size, "sharing")
+	}
 	for curr = 0; remaining != 0; curr += partLength {
-		_ = bar.Add(int(partLength))
+		if showProgressBar {
+			_ = bar.Add(int(partLength))
+		}
 		if remaining < maxPartSize {
 			partLength = remaining
 		} else {
@@ -90,7 +98,9 @@ func (u uploadService) Upload(filename string, cfg dto.Config) (string, error) {
 		partNumber++
 		completedParts = append(completedParts, completedPart)
 	}
-	bar.Reset()
+	if showProgressBar {
+		bar.Reset()
+	}
 
 	completeResponse, err := u.completeMultipartUpload(storage, resp, completedParts)
 	if err != nil {
@@ -117,6 +127,7 @@ func (u uploadService) GrantPublicAccess(key string, cfg dto.Config) error {
 	if err != nil {
 		return fmt.Errorf("error granting public read access: %w", err)
 	}
+	logrus.Infof("public-read ACL for %s set", key)
 	return nil
 }
 
