@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -15,8 +16,14 @@ import (
 	"share/internal/dto"
 )
 
+const (
+	maxPartSize = int64(1024 * 1024)
+	maxRetries  = 3
+)
+
 type UploadService interface {
 	Upload(filename string, cfg dto.Config) (string, error)
+	GrantPublicAccess(key string, cfg dto.Config) error
 }
 
 type uploadService struct {
@@ -40,6 +47,10 @@ func (u uploadService) Upload(filename string, cfg dto.Config) (string, error) {
 	fileInfo, _ := file.Stat()
 	size := fileInfo.Size()
 	buffer := make([]byte, size)
+	_, err = file.Read(buffer)
+	if err != nil {
+		return "", err
+	}
 	fileType := http.DetectContentType(buffer)
 
 	storage := s3.New(sess)
@@ -86,9 +97,27 @@ func (u uploadService) Upload(filename string, cfg dto.Config) (string, error) {
 		return "", err
 	}
 	if completeResponse.Key == nil {
-		return "", fmt.Errorf("unable to get object  key")
+		return "", fmt.Errorf("unable to get object key")
 	}
 	return *completeResponse.Key, nil
+}
+
+func (u uploadService) GrantPublicAccess(key string, cfg dto.Config) error {
+	sess := session.Must(session.NewSessionWithOptions(session.Options{
+		SharedConfigState: session.SharedConfigEnable,
+	}))
+	storage := s3.New(sess)
+
+	aclPolicy := &s3.PutObjectAclInput{
+		Bucket: aws.String(cfg.BucketName),
+		Key:    aws.String(key),
+		ACL:    aws.String("public-read"),
+	}
+	_, err := storage.PutObjectAclWithContext(context.Background(), aclPolicy)
+	if err != nil {
+		return fmt.Errorf("error granting public read access: %w", err)
+	}
+	return nil
 }
 
 func (uploadService) completeMultipartUpload(svc *s3.S3, resp *s3.CreateMultipartUploadOutput, completedParts []*s3.CompletedPart) (*s3.CompleteMultipartUploadOutput, error) {

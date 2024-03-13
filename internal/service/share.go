@@ -4,11 +4,7 @@ import (
 	"fmt"
 	"github.com/sirupsen/logrus"
 	"os"
-)
-
-const (
-	maxPartSize = int64(1024 * 1024)
-	maxRetries  = 3
+	"strings"
 )
 
 type ShareService interface {
@@ -45,6 +41,13 @@ func (s shareService) Share(filename string) error {
 	if err != nil {
 		return err
 	}
-	logrus.Infof("File uploaded successfully. File location: %s", key)
+	err = s.uploadService.GrantPublicAccess(key, cfg)
+	if err != nil {
+		return err
+	}
+
+	publicUrl := fmt.Sprintf("https://%s.s3.amazonaws.com/%s", strings.ToLower(cfg.BucketName), key)
+
+	logrus.Infof("File uploaded successfully. File location: %s", publicUrl)
 	return err
 }
