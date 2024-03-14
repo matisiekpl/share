@@ -125,7 +125,7 @@ func (u uploadService) GrantPublicAccess(key string, cfg dto.Config) error {
 	}
 	_, err := storage.PutObjectAclWithContext(context.Background(), aclPolicy)
 	if err != nil {
-		return fmt.Errorf("error granting public read access: %w", err)
+		return fmt.Errorf("error granting public read access\nhint: make sure your bucket has ACLs enabled and does not \"Block public access to buckets and objects granted through new access control lists\"\nSee: https://s3.console.aws.amazon.com/s3/buckets/" + cfg.BucketName + "?tab=permissions")
 	}
 	logrus.Infof("public-read ACL for %s set", key)
 	return nil

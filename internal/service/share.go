@@ -5,6 +5,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.design/x/clipboard"
 	"os"
+	"slices"
 	"strings"
 )
 
@@ -25,7 +26,7 @@ func newShareService(configService ConfigService, uploadService UploadService) S
 }
 
 func (s shareService) Share(filename string, copyToClipboard bool) error {
-	if err := s.configService.Setup(); err != nil {
+	if err := s.configService.Setup(false, false); err != nil {
 		return err
 	}
 
@@ -38,6 +39,16 @@ func (s shareService) Share(filename string, copyToClipboard bool) error {
 	}
 
 	cfg := s.configService.Get()
+
+	if !slices.Contains(s.configService.ListBuckets(), cfg.BucketName) {
+		logrus.Errorf("bucket %s is not available", cfg.BucketName)
+		err = s.configService.Setup(true, false)
+		if err != nil {
+			return err
+		}
+		cfg = s.configService.Get()
+	}
+
 	key, err := s.uploadService.Upload(filename, cfg)
 	if err != nil {
 		return err
@@ -54,7 +65,8 @@ func (s shareService) Share(filename string, copyToClipboard bool) error {
 	if copyToClipboard {
 		err = clipboard.Init()
 		if err != nil {
-			logrus.Panicf("unable to init clipboard: %w", err)
+			logrus.Errorf("unable to init clipboard: %w", err)
+			os.Exit(1)
 		}
 		clipboard.Write(clipboard.FmtText, []byte(publicUrl))
 		logrus.Infof("copied to clipboard")
